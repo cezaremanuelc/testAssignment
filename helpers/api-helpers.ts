@@ -10,6 +10,7 @@ export const getIssues = async (request: any, owner: string, repo: string, heade
       headers,
       data: payload,
     });
+    console.log(response.json)
     return response.json();
   };
   

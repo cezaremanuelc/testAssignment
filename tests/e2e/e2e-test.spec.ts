@@ -1,92 +1,130 @@
 import { test, expect } from '@playwright/test';
-import { BASE_URL_UI, BASE_URL_API, HEADERS, OWNER, REPO } from '../../config/env-config';
+import { PageValidations } from '../../factories/PageValidations';
+import { BASE_URL_UI, BASE_URL_API, HEADERS, OWNER, REPO, GITHUB_USERNAME, GITHUB_PASSWORD } from '../../config/env-config';
 
-test.describe('GitHub UI Interaction Tests', () => {
-  let issueNumber: number;
+let randomTitle: string;
 
-  test('Complete E2E: Login, Create, Verify, and Close Issue via GitHub UI', async ({ page, request }) => {
-    // Navigate to GitHub Login Page
+test.describe('GitHub E2E Tests', () => {
+  test.beforeAll(() => {
+    randomTitle = `${Math.random().toString(36).substring(2, 15)}`;
+    console.log('Generated Random Title:', randomTitle);
+  });
+
+  test('E2E: Login, Create, Verify, and Close Issue via UI', async ({ page }) => {
+    const validations = new PageValidations(page);
+
+    // Navigate to login page
     await page.goto(`${BASE_URL_UI}/login`);
 
-    // Reject cookies (if the banner is visible)
-    const rejectButton = page.locator('button:has-text("Reject")');
-    if (await rejectButton.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await rejectButton.click();
-      console.log('🛑 Rejected cookies.');
-    } else {
-      console.log('👍 No cookie banner or Reject button visible.');
-    }
-
-    // Log in to GitHub
-    console.log('🔐 Logging in...');
-    await page.fill('#login_field', 'emanuelnospam'); // Replace with actual username
-    await page.fill('#password', 'testPass88*'); // Replace with actual password
+    // Log in
+    await page.fill('#login_field', GITHUB_USERNAME);
+    await page.fill('#password', GITHUB_PASSWORD);
     await page.click('input[type="submit"]');
     await page.waitForNavigation();
+    await expect(page).toHaveURL('https://github.com/');
     console.log('✅ Login successful.');
 
-    // Navigate to the Issues Page
-    console.log('🔗 Navigating to the GitHub Issues page...');
-    await page.goto(`${BASE_URL_UI}/${OWNER}/${REPO}/issues`); // Uses the environment variables
+    // Validate login page
+    await validations.validateLoginPage();
+
+    // Navigate to issues page
+    await page.goto(`${BASE_URL_UI}/${OWNER}/${REPO}/issues`);
     await expect(page).toHaveURL(`${BASE_URL_UI}/${OWNER}/${REPO}/issues`);
-    console.log('✅ Issues page successfully loaded.');
+    console.log('✅ Issues page loaded successfully.');
 
-    // Create a New Issue
-    console.log('📝 Creating a new issue...');
+    // Validate issues page
+    await validations.validateIssuesPage();
+
+    // Create a new issue
     await page.locator('text=New issue').click();
-    await page.waitForSelector('[placeholder="Title"]');
-    await page.fill('[placeholder="Title"]', 'E2E Test Issue');
+    await validations.validateNewIssuePage();
+    
+    
+    await page.fill('[placeholder="Title"]', randomTitle);
     await page.fill('[aria-label="Markdown value"]', 'This is a test issue created via Playwright.');
-    await page.locator('//span[@class="prc-Button-Label-pTQ3x" and contains(text(), "Create")]').click();
-    console.log('✅ Issue successfully created via UI.');
+    await page.locator('//span[contains(text(), "Create")]').click();
+    console.log('✅ Issue created successfully.');
 
-    // Verify the Issue in the List via UI
-    console.log('🔍 Verifying issue in the list via UI...');
-    await page.goto(`${BASE_URL_UI}/${OWNER}/${REPO}/issues`); // Navigate back to the issues list
-
-    // Locate the span element
-    console.log('🔍 Locating the first span with text "E2E Test Issue"...');
+    // Verify the issue is created
+    await page.goto(`${BASE_URL_UI}/${OWNER}/${REPO}/issues`);
     
-    
-    
-    // Target the first matching span
-    await page.locator('//span[@class="prc-Text-Text-0ima0" and text()="E2E Test Issue"]').nth(0).click();
 
 
+    const inputField = page.locator('input#repository-input');
+
+    // Click the input field to focus
+    console.log('🔍 Clicking the input field...');
+    await inputField.click();
+
+    // Clear the input field
+    console.log('🧹 Clearing the input field...');
+
+    await inputField.clear();
+    await inputField.fill(randomTitle);
+    await inputField.press('Enter');
+
+    for (let i = 0; i < 5; i++) { // Try up to 5 times
+      await page.reload();
+      if (await page.locator(`//span[@class="prc-Text-Text-0ima0" and text()="${randomTitle}"]`).first().isVisible()) {
+        console.log('✅ Element found!');
+        await page.locator(`//span[@class="prc-Text-Text-0ima0" and text()="${randomTitle}"]`).nth(0).click();
+        break;
+      }
+      console.log('❌ Element not found. Retrying...');
+    }
 
     console.log('🔒 Locating the "Close issue" button...');
-
-    // Locate the "Close issue" button
-    const closeIssueButton = page.locator('//span[@data-component="text" and @class="prc-Button-Label-pTQ3x" and text()="Close issue"]');
     
-    // Click the button
-    console.log('🔒 Clicking the "Close issue" button...');
+    await expect(page.locator(`//span[text()="${randomTitle}"]`).first()).toBeVisible();
+    console.log('✅ Issue verified successfully.');
+
+    // Close the issue
+    const closeIssueButton = page.locator('//span[contains(text(), "Close issue")]');
     await closeIssueButton.click();
-    
+    console.log('✅ Issue closed successfully.');
+  });
+ test('API validations ->', async ({ page, request }) => {
+    console.log('🔍 Using randomTitle in second test:', randomTitle)
 
-    console.log('✅ Issue successfully closed /  verified in the UI.');
-
-    // Retrieve Issue Details via API
-    console.log('🌐 Verifying issue creation via API...');
+    console.log('🌐 Verifying issue creation via API...')
     const issuesResponse = await request.get(`${BASE_URL_API}/repos/${OWNER}/${REPO}/issues`, { headers: HEADERS });
     const issues = await issuesResponse.json();
-    const createdIssue = issues.find((issue: { title: string }) => issue.title === 'E2E Test Issue');
-    expect(createdIssue).not.toBeUndefined();
-    expect(createdIssue.state).toBe('open');
-    issueNumber = createdIssue.number;
-    console.log(`✅ API verified issue #${issueNumber} is open.`);
-
-    console.log('🔍 Locating the first issue row with the title "E2E Test Issue"...');
+    console.log('')
 
 
-    console.log('✅ Issue successfully closed via UI.');
     // Verify Closed Issue Status via the API
+
     console.log('🌐 Verifying issue closure via API...');
-    const closedIssueResponse = await request.get(`${BASE_URL_API}/repos/${OWNER}/${REPO}/issues`, { headers: HEADERS });
-    const updatedIssues = await closedIssueResponse.json();
-    const closedIssue = updatedIssues.find((issue: { title: string }) => issue.title === 'E2E Test Issue');
-    expect(closedIssue).not.toBeUndefined();
-    expect(closedIssue.state).toBe('closed');
-    console.log('✅ API confirmed the issue is closed.');
+
+    console.log('🔍 Sending GET request to fetch updated list of issues...');
+
+
+    console.log('🔍 Fetching closed issues from the GitHub repository...');
+    const closedIssueResponse = await request.get(
+      `${BASE_URL_API}/repos/${OWNER}/${REPO}/issues?state=closed`,
+      { headers: HEADERS }
+    );
+
+    console.log('✅ Received response from API. Status:', closedIssueResponse.status());
+    const closedIssues = await closedIssueResponse.json();
+
+    console.log('🔎 Closed issues retrieved:', closedIssues);
+
+    // Find the specific issue by its title
+    const closedIssue = closedIssues.find((issue: { title: string }) => issue.title === randomTitle);
+
+    console.log(closedIssue)
+
+    if (closedIssue) {
+      console.log(`✅ Issue with title "${randomTitle}" found in closed issues.`);
+      console.log('Issue details:', closedIssue);
+      expect(closedIssue.state).toBe('closed');
+    } else {
+      console.log(`❌ Issue with title "${randomTitle}" not found in closed issues.`);
+      throw new Error(`Issue with title "${randomTitle}" not found in closed issues.`);
+    }
+
+
+
   });
 });

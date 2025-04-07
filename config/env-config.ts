@@ -2,6 +2,9 @@ import * as dotenv from 'dotenv';
 
 dotenv.config();
 
+export const GITHUB_USERNAME= 'emanuelnospam';
+export const GITHUB_PASSWORD= 'testPass88*';
+
 export const BASE_URL_UI = 'https://github.com';
 export const BASE_URL_API = 'https://api.github.com';
 export const HEADERS = {
